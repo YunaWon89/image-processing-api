@@ -1,0 +1,10 @@
+node_modules/
+dist/
+
+uploads/*
+processed/*
+cache/*
+src/Pictures/
+.env
+.env.*
+!.env.example
