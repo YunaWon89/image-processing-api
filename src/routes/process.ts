@@ -6,11 +6,13 @@ import {
   metadataController,
   thumbnailController,
   watermarkController,
+  streamProcessController,
 } from "../controllers/processController";
 
 const router = Router();
 
 router.post("/:filename", validateProcessOptions, processImageController);
+router.post("/:filename/stream", streamProcessController);
 
 router.post(
   "/:filename/convert",

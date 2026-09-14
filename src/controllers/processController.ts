@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import {
   processImage,
+  processImageStream,
   getImageMetadata,
   createThumbnail,
   addWatermark,
@@ -125,6 +126,31 @@ export async function watermarkController(
         ...result,
         url: `${baseUrl}/processed/${result.filename}`
       }
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+export async function streamProcessController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const filename = req.params.filename as string;
+    const width = req.body.width ?? 800;
+
+    const result = await processImageStream(filename, width);
+
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+
+    res.status(200).json({
+      success: true,
+      message: "Image processed with stream successfully",
+      image: {
+        ...result,
+        url: `${baseUrl}/processed/${result.filename}`,
+      },
     });
   } catch (error) {
     next(error);

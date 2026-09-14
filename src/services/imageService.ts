@@ -1,6 +1,12 @@
 import path from "path";
 import fs from "fs/promises";
+import fsSync from "fs";
+import { pipeline } from "stream/promises";
 import { sharp, SupportedFormat } from "../config/sharp";
+import {
+  getCachedImage,
+  setCachedImage,
+} from "../config/redis";
 
 const uploadsDir = path.join(process.cwd(), "uploads");
 const processedDir = path.join(process.cwd(), "processed");
@@ -13,7 +19,12 @@ export interface ProcessOptions {
   quality?: number;
   sharpen?: boolean;
 }
-
+function createCacheKey(
+  filename: string,
+  options: ProcessOptions,
+): string {
+  return `image:${filename}:${JSON.stringify(options)}`;
+}
 export interface ProcessResult {
   filename: string;
   path: string;
@@ -55,6 +66,30 @@ export async function processImage(
 
   await fs.access(inputPath);
   await ensureProcessedDir();
+  const cacheKey = createCacheKey(filename, options);
+
+const cachedFilename = await getCachedImage(cacheKey);
+
+if (cachedFilename) {
+  const cachedName = cachedFilename.toString();
+  const cachedPath = path.join(processedDir, cachedName);
+
+  try {
+    const stats = await fs.stat(cachedPath);
+
+    console.log("Cache HIT:", cacheKey);
+
+    return {
+      filename: cachedName,
+      path: cachedPath,
+      size: stats.size,
+    };
+  } catch {
+    console.log("Cached file not found, processing image again");
+  }
+}
+
+console.log("Cache MISS:", cacheKey);
 
   const outputFormat = options.format ?? "webp";
 
@@ -103,7 +138,10 @@ export async function processImage(
   }
 
   const result = await image.toFile(outputPath);
-
+await setCachedImage(
+  cacheKey,
+  Buffer.from(outputFilename),
+);
   return {
     filename: outputFilename,
     path: outputPath,
@@ -113,7 +151,49 @@ export async function processImage(
     size: result.size,
   };
 }
+export async function processImageStream(
+  filename: string,
+  width = 800,
+): Promise<ProcessResult> {
+  const inputPath = path.join(uploadsDir, filename);
 
+  await fs.access(inputPath);
+  await ensureProcessedDir();
+
+  const outputFilename = `${path.parse(filename).name}-stream-${Date.now()}.webp`;
+  const outputPath = path.join(processedDir, outputFilename);
+
+  const readStream = fsSync.createReadStream(inputPath);
+
+  const transformer = sharp()
+    .resize({
+      width,
+      withoutEnlargement: true,
+    })
+    .webp({
+      quality: 80,
+    });
+
+  const writeStream = fsSync.createWriteStream(outputPath);
+
+  await pipeline(
+    readStream,
+    transformer,
+    writeStream,
+  );
+
+  const metadata = await sharp(outputPath).metadata();
+  const stats = await fs.stat(outputPath);
+
+  return {
+    filename: outputFilename,
+    path: outputPath,
+    width: metadata.width,
+    height: metadata.height,
+    format: "webp",
+    size: stats.size,
+  };
+}
 export async function getImageMetadata(
   filename: string,
 ): Promise<ImageMetadata> {
